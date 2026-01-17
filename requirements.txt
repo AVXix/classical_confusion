@@ -1,0 +1,7 @@
+kaggle>=1.5.12
+numpy
+scipy
+soundfile
+matplotlib
+librosa
+torch
