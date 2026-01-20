@@ -10,13 +10,35 @@ Outputs:
 
 from __future__ import annotations
 
+import argparse
 import csv
 import sys
-import argparse
 from pathlib import Path
 
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
+
+
+COMPOSER_ERA: dict[str, str] = {
+    "Johann Sebastian Bach": "Baroque",
+    "George Frideric Handel": "Baroque",
+    "Domenico Scarlatti": "Baroque",
+    "Joseph Haydn": "Classical",
+    "Wolfgang Amadeus Mozart": "Classical",
+    "Ludwig van Beethoven": "Romantic",
+    "Franz Schubert": "Romantic",
+    "Frédéric Chopin": "Romantic",
+    "Franz Liszt": "Romantic",
+    "Robert Schumann": "Romantic",
+    "Johannes Brahms": "Romantic",
+    "Pyotr Ilyich Tchaikovsky": "Romantic",
+    "Sergei Rachmaninoff": "Late Romantic",
+    "Claude Debussy": "Impressionist",
+    "Alexander Scriabin": "Modern",
+    "Mily Balakirev": "Romantic",
+    "Modest Mussorgsky": "Romantic",
+    "Isaac Albéniz": "Romantic",
+}
 
 
 def resolve_from_root(p: str | Path) -> Path:
@@ -35,7 +57,15 @@ def normalize_composer(name: str) -> str:
         "Pyotr Ilyich Tchaikovsky / Sergei Rachmaninoff": "Pyotr Ilyich Tchaikovsky",
         "Franz Schubert / Franz Liszt": "Franz Schubert",
     }
-    return replacements.get(name, name)
+    normalized = replacements.get(name, name)
+    return normalized
+
+
+def composer_era_for(composer: str) -> str:
+    composer = (composer or "").strip()
+    if not composer:
+        return "Unknown"
+    return COMPOSER_ERA.get(composer, "Unknown")
 
 
 def main() -> int:
@@ -104,10 +134,12 @@ def main() -> int:
         if not row:
             missing.append(base)
             continue
+        composer = normalize_composer(row.get("canonical_composer", ""))
         out_rows.append(
             {
                 "downloaded_file": base,
-                "canonical_composer": normalize_composer(row.get("canonical_composer", "")),
+                "canonical_composer": composer,
+                "composer_era": composer_era_for(composer),
                 "canonical_title": row.get("canonical_title", ""),
                 "year": row.get("year", ""),
                 "split": row.get("split", ""),
@@ -123,6 +155,7 @@ def main() -> int:
                 fieldnames=[
                     "downloaded_file",
                     "canonical_composer",
+                    "composer_era",
                     "canonical_title",
                     "year",
                     "split",

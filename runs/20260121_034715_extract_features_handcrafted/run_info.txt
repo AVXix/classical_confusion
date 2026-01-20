@@ -1,0 +1,35 @@
+== Run ==
+timestamp: 2026-01-21T03:47:19
+script: extract_features
+command: d:\music classification\scripts\extract_features.py --in-dir d:\music classification\data --out-dir d:\music classification\features --only-labeled-csv d:\music classification\downloaded_authors.csv --handcrafted --run-name handcrafted
+
+== Environment ==
+cwd: D:\music classification
+env: {'KAGGLE_CONFIG_DIR': None, 'KAGGLE_USERNAME': None}
+package_versions: {'numpy': '2.3.5', 'librosa': '0.11.0', 'torch': '2.9.1+cpu', 'sklearn': '1.8.0', 'kaggle': '1.8.3', 'joblib': '1.5.3'}
+platform: Windows-10-10.0.19045-SP0
+python_executable: D:\music classification\.venv\Scripts\python.exe
+python_version: 3.13.3 (tags/v3.13.3:6280bb5, Apr  8 2025, 14:47:33) [MSC v.1943 64 bit (AMD64)]
+== Hyperparameters / Args ==
+fmax: 8000.0
+fmin: 0.0
+handcrafted: True
+hop_length: 512
+in_dir: d:\music classification\data
+log_mode: db
+max_files: 0
+mfcc: False
+n_fft: 2048
+n_mels: 128
+n_mfcc: 20
+only_labeled_csv: d:\music classification\downloaded_authors.csv
+out_dir: d:\music classification\features
+run_dir: runs
+run_name: handcrafted
+skip_existing: False
+sr: 22050
+win_length: 0
+== Extra ==
+in_dir: d:\music classification\data
+out_dir: d:\music classification\features
+wav_files: 149

@@ -50,31 +50,32 @@ class TrainConfig:
 	split_ratio: float = 0.7
 	num_workers: int = 0
 	seed: int = 42
-	device: str = "cuda"  # auto | cpu | cuda
+	device: str = "auto"  # auto | cpu | cuda
 	model: str = "cnn"  # cnn | cnn_transformer
+	label_column: str = "canonical_composer"
 	tx_layers: int = 2
 	tx_heads: int = 4
 	tx_ff_dim: int = 256
 	tx_dropout: float = 0.1
 
 
-def _read_labels(labels_csv: Path) -> Dict[str, str]:
+def _read_labels(labels_csv: Path, label_column: str) -> Dict[str, str]:
 	mapping: Dict[str, str] = {}
 	with labels_csv.open("r", encoding="utf-8", newline="") as f:
 		reader = csv.DictReader(f)
 		if not reader.fieldnames:
 			raise ValueError("labels CSV has no headers")
-		required = ["downloaded_file", "canonical_composer"]
+		required = ["downloaded_file", label_column]
 		for r in required:
 			if r not in reader.fieldnames:
 				raise ValueError(f"labels CSV missing column: {r}")
 		for row in reader:
 			wav_name = (row.get("downloaded_file") or "").strip()
-			composer = (row.get("canonical_composer") or "").strip()
-			if not wav_name or not composer:
+			label = (row.get(label_column) or "").strip()
+			if not wav_name or not label:
 				continue
 			stem = Path(wav_name).stem
-			mapping[stem] = composer
+			mapping[stem] = label
 	if not mapping:
 		raise ValueError("No labels found in labels CSV")
 	return mapping
@@ -285,7 +286,7 @@ def train(cfg: TrainConfig) -> int:
 	from scripts.run_logging import write_run_info_txt
 
 	rng = np.random.default_rng(cfg.seed)
-	labels = _read_labels(cfg.labels_csv)
+	labels = _read_labels(cfg.labels_csv, cfg.label_column)
 	items = _build_dataset_index(cfg.features_dir, labels)
 	vocab, id_to_name = _make_label_vocab(items)
 
@@ -305,6 +306,7 @@ def train(cfg: TrainConfig) -> int:
 				"val_items": int(len(val_idx)),
 				"features_dir": str(cfg.features_dir),
 				"labels_csv": str(cfg.labels_csv),
+				"label_column": cfg.label_column,
 			},
 		)
 
@@ -427,6 +429,7 @@ def evaluate(
 	ckpt_path: Path,
 	features_dir: Path,
 	labels_csv: Path,
+	label_column: str,
 	split_ratio: float,
 	seed: int,
 	batch_size: int,
@@ -439,7 +442,7 @@ def evaluate(
 	id_to_name: list[str] = ckpt["id_to_name"]
 	to_id = {name: i for i, name in enumerate(id_to_name)}
 
-	labels = _read_labels(labels_csv)
+	labels = _read_labels(labels_csv, label_column)
 	items_all = _build_dataset_index(features_dir, labels)
 	items = [(p, c) for (p, c) in items_all if c in to_id]
 	if len(items) < 2:
@@ -545,6 +548,7 @@ def main() -> int:
 	p.add_argument("--mode", choices=["train", "predict", "eval"], default="train")
 	p.add_argument("--features-dir", default="features")
 	p.add_argument("--labels-csv", default="downloaded_authors.csv")
+	p.add_argument("--label-column", default="canonical_composer", help="Column in labels CSV to use as the training target")
 	p.add_argument("--run-dir", default="runs", help="Folder to write run_info.txt")
 	p.add_argument("--run-name", default="", help="Optional tag to include in run folder name")
 	p.add_argument("--epochs", type=int, default=10)
@@ -621,6 +625,7 @@ def main() -> int:
 			ckpt_path=ckpt_path,
 			features_dir=resolve_from_root(args.features_dir),
 			labels_csv=resolve_from_root(args.labels_csv),
+			label_column=str(args.label_column),
 			split_ratio=float(args.split_ratio),
 			seed=int(args.seed),
 			batch_size=int(args.batch_size),
@@ -640,6 +645,7 @@ def main() -> int:
 		split_ratio=args.split_ratio,
 		device=str(args.device),
 		model=args.model,
+		label_column=str(args.label_column),
 		tx_layers=args.tx_layers,
 		tx_heads=args.tx_heads,
 		tx_ff_dim=args.tx_ff_dim,

@@ -1,0 +1,26 @@
+== Run ==
+timestamp: 2026-01-21T04:35:34
+script: vae_fusion_classifier
+command: d:\music classification\scripts\vae_fusion_classifier.py --mode train --features-dir d:\music classification\features --labels-csv d:\music classification\downloaded_authors.csv --embed-ckpt d:\music classification\models\cnn_transformer_composer.pt --vae-epochs 50 --clf-epochs 30 --batch-size 32 --device auto --run-name vae-fusion
+
+== Environment ==
+cwd: D:\music classification
+env: {'KAGGLE_CONFIG_DIR': None, 'KAGGLE_USERNAME': None}
+package_versions: {'numpy': '2.3.5', 'librosa': '0.11.0', 'torch': '2.9.1+cpu', 'sklearn': '1.8.0', 'kaggle': '1.8.3', 'joblib': '1.5.3'}
+platform: Windows-10-10.0.19045-SP0
+python_executable: D:\music classification\.venv\Scripts\python.exe
+python_version: 3.13.3 (tags/v3.13.3:6280bb5, Apr  8 2025, 14:47:33) [MSC v.1943 64 bit (AMD64)]
+== Hyperparameters / Args ==
+== Extra ==
+batch_size: 32
+beta: 1.0
+clf_epochs: 30
+embed_ckpt: d:\music classification\models\cnn_transformer_composer.pt
+features_dir: d:\music classification\features
+label_column: canonical_composer
+labels_csv: d:\music classification\downloaded_authors.csv
+latent_dim: 32
+lr: 0.001
+num_classes: 18
+num_items: 149
+vae_epochs: 50
