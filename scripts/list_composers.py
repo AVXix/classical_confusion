@@ -11,7 +11,8 @@ from pathlib import Path
 
 
 def main() -> int:
-    csv_path = Path(r"d:\music classification\maestro-v3.0.0.csv")
+    root = Path(__file__).resolve().parents[1]
+    csv_path = root / "maestro-v3.0.0.csv"
     if not csv_path.exists():
         print(f"Missing file: {csv_path}")
         return 2
@@ -44,7 +45,7 @@ def main() -> int:
 
     composers_sorted = sorted(composers, key=lambda s: s.casefold())
 
-    out_txt = Path(r"d:\music classification\composer_names.txt")
+    out_txt = root / "composer_names.txt"
     out_txt.write_text("\n".join(composers_sorted), encoding="utf-8")
 
     print(f"composer_col={composer_col}")
@@ -59,3 +60,4 @@ def main() -> int:
 
 if __name__ == "__main__":
     raise SystemExit(main())
+

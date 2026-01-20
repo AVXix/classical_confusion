@@ -2,9 +2,6 @@
 """Generate mel spectrogram images for WAV files using librosa.
 
 Outputs one PNG per input WAV.
-
-Example:
-    ./.venv/Scripts/python.exe make_mel_spectrograms.py --in-dir data --out-dir mels
 """
 
 from __future__ import annotations
@@ -16,6 +13,14 @@ import numpy as np
 import librosa
 import librosa.display
 import matplotlib
+
+
+PROJECT_ROOT = Path(__file__).resolve().parents[1]
+
+
+def resolve_from_root(p: str | Path) -> Path:
+    path = Path(p)
+    return path if path.is_absolute() else (PROJECT_ROOT / path)
 
 
 def main() -> int:
@@ -30,8 +35,8 @@ def main() -> int:
     p.add_argument("--max-files", type=int, default=0, help="0 = no limit")
     args = p.parse_args()
 
-    in_dir = Path(args.in_dir)
-    out_dir = Path(args.out_dir)
+    in_dir = resolve_from_root(args.in_dir)
+    out_dir = resolve_from_root(args.out_dir)
     if not in_dir.exists():
         print(f"Input dir not found: {in_dir}")
         return 2
@@ -44,7 +49,6 @@ def main() -> int:
         print(f"No .wav files found under: {in_dir}")
         return 2
 
-    # Use non-interactive backend to avoid GUI requirements.
     matplotlib.use("Agg")
     import matplotlib.pyplot as plt
 

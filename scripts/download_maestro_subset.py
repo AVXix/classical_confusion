@@ -3,13 +3,21 @@
 Download a subset (~target bytes) of files from a Kaggle dataset.
 
 Usage:
-  python download_maestro_subset.py --outdir data --target-bytes 1073741824
+  python scripts/download_maestro_subset.py --outdir data --target-bytes 1073741824
 
 Requires: kaggle (place your `kaggle.json` as described in README)
 """
 import os
 import argparse
 from pathlib import Path
+
+
+PROJECT_ROOT = Path(__file__).resolve().parents[1]
+
+
+def resolve_from_root(p: str | Path) -> Path:
+    path = Path(p)
+    return path if path.is_absolute() else (PROJECT_ROOT / path)
 
 
 def human(n):
@@ -46,7 +54,7 @@ def _print_kaggle_setup_help(expected_path: Path) -> None:
     print(r'  1) Put kaggle.json here: %USERPROFILE%\.kaggle\kaggle.json')
     print(r'     (Create the folder if needed: mkdir %USERPROFILE%\.kaggle)')
     print('  2) Or pass a custom path:')
-    print('       python download_maestro_subset.py --kaggle-json "C:\\path\\to\\kaggle.json" --dry-run')
+    print('       python scripts/download_maestro_subset.py --kaggle-json "C:\\path\\to\\kaggle.json" --dry-run')
     print('  3) Or set env vars (current session):')
     print('       setx KAGGLE_USERNAME "<your_username>"')
     print('       setx KAGGLE_KEY "<your_key>"')
@@ -72,7 +80,8 @@ def main():
                    help='When Kaggle file sizes are missing, stop downloading once on-disk outdir size reaches target')
     args = p.parse_args()
 
-    os.makedirs(args.outdir, exist_ok=True)
+    outdir_path = resolve_from_root(args.outdir)
+    os.makedirs(outdir_path, exist_ok=True)
 
     # Allow overriding where Kaggle looks for kaggle.json
     if args.kaggle_json:
@@ -96,7 +105,6 @@ def main():
     try:
         from kaggle.api.kaggle_api_extended import KaggleApi  # type: ignore
     except SystemExit as e:
-        # If kaggle's import-time auth check fired, show our help instead.
         if e.code == 1 and (not has_env_creds) and (not expected_kaggle_json.exists()):
             _print_kaggle_setup_help(expected_kaggle_json)
             raise SystemExit(2)
@@ -125,7 +133,6 @@ def main():
 
     exts = [e.strip().lower() for e in args.ext.split(',') if e.strip()]
 
-    # collect files matching extension and having a size attribute
     candidates = []
     for f in files:
         name = f.name
@@ -139,8 +146,6 @@ def main():
             or getattr(f, 'totalBytes', None)
         )
         if size is None:
-            # Some Kaggle API versions omit size; keep it but treat as 0 so it can
-            # still be downloaded if needed.
             size = 0
         candidates.append((name, size))
 
@@ -149,7 +154,6 @@ def main():
         print('Tip: run with --ext .zip to include archives, or choose a different extension based on dataset contents.')
         return
 
-    # keep deterministic order
     candidates.sort()
 
     selected = []
@@ -160,7 +164,6 @@ def main():
         selected.append((name, size))
         total += size
 
-    # If we don't have sizes (all 0), just take the first N files as a fallback.
     if total == 0 and candidates:
         selected = candidates[: min(5000, len(candidates))]
 
@@ -171,7 +174,6 @@ def main():
             print(f"{name} — {human(size)}")
         return
 
-    outdir_path = Path(args.outdir)
     for name, size in selected:
         if args.enforce_target_bytes:
             on_disk = _dir_size_bytes(outdir_path)
@@ -181,7 +183,7 @@ def main():
 
         print(f"Downloading {name} ({human(size)})...")
         try:
-            api.dataset_download_file(args.dataset, file_name=name, path=args.outdir, force=False)
+            api.dataset_download_file(args.dataset, file_name=name, path=str(outdir_path), force=False)
         except Exception as e:
             print(f"Failed to download {name}: {e}")
 

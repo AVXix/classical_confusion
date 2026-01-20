@@ -37,19 +37,27 @@ Usage
 Dry-run to see selected files (no downloads):
 
 ```powershell
-python download_maestro_subset.py --outdir data --target-bytes 1073741824 --dry-run
+python scripts/download_maestro_subset.py --outdir data --target-bytes 1073741824 --dry-run
 ```
 
 If your `kaggle.json` is not in the default location:
 
 ```powershell
-python download_maestro_subset.py --kaggle-json "C:\\path\\to\\kaggle.json" --outdir data --target-bytes 1073741824 --dry-run
+python scripts/download_maestro_subset.py --kaggle-json "C:\\path\\to\\kaggle.json" --outdir data --target-bytes 1073741824 --dry-run
 ```
 
 To actually download the selected files:
 
 ```powershell
-python download_maestro_subset.py --outdir data --target-bytes 1073741824
+python scripts/download_maestro_subset.py --outdir data --target-bytes 1073741824
+```
+
+Handcrafted features
+
+To extract log-mel spectrograms and the handcrafted feature vector (tempo/beat, ZCR, spectral, chroma, tonnetz):
+
+```powershell
+python scripts/extract_features.py --in-dir data --out-dir features --handcrafted
 ```
 
 Notes

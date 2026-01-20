@@ -15,7 +15,7 @@ from pathlib import Path
 
 
 def main() -> int:
-    root = Path(r"d:\music classification")
+    root = Path(__file__).resolve().parents[1]
     data_dir = root / "data"
     meta_csv = root / "maestro-v3.0.0.csv"
 
@@ -92,7 +92,10 @@ def main() -> int:
             w.writeheader()
             w.writerows(out_rows)
 
-        unique = sorted({r["canonical_composer"].strip() for r in out_rows if r["canonical_composer"]}, key=lambda s: s.casefold())
+        unique = sorted(
+            {r["canonical_composer"].strip() for r in out_rows if r["canonical_composer"]},
+            key=lambda s: s.casefold(),
+        )
         out_txt.write_text("\n".join(unique), encoding="utf-8")
 
         print(f"matched_files={len(out_rows)}/{len(downloaded)}")
@@ -113,3 +116,4 @@ def main() -> int:
 
 if __name__ == "__main__":
     raise SystemExit(main())
+

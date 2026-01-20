@@ -25,3 +25,15 @@ env/
 
 .DS_Store
 Thumbs.db 
+
+# Secrets
+kaggle.json
+
+# Generated data/artifacts
+data/
+features/
+mels/
+models/
+
+# Plots/images
+*.png
