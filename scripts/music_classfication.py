@@ -42,7 +42,7 @@ class TrainConfig:
 	labels_csv: Path
 	run_dir: Path | None = None
 	batch_size: int = 2
-	epochs: int = 5
+	epochs: int = 10
 	lr: float = 1e-3
 	dropout: float = 0.25
 	kernel: int = 3
@@ -50,6 +50,7 @@ class TrainConfig:
 	split_ratio: float = 0.7
 	num_workers: int = 0
 	seed: int = 42
+	device: str = "cuda"  # auto | cpu | cuda
 	model: str = "cnn"  # cnn | cnn_transformer
 	tx_layers: int = 2
 	tx_heads: int = 4
@@ -329,7 +330,21 @@ def train(cfg: TrainConfig) -> int:
 		NpzDataset(val_idx), batch_size=cfg.batch_size, shuffle=False, num_workers=cfg.num_workers
 	)
 
-	device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+	# Device selection: configurable.
+	requested = str(cfg.device or "auto").lower()
+	if requested == "cpu":
+		device = torch.device("cpu")
+	elif requested == "cuda":
+		if not torch.cuda.is_available():
+			raise RuntimeError(
+				"--device cuda was requested but CUDA is not available. "
+				f"Your torch build is {torch.__version__}. "
+				"Install a CUDA-enabled PyTorch build and ensure an NVIDIA GPU + drivers are present, "
+				"or use --device cpu."
+			)
+		device = torch.device("cuda")
+	else:
+		device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 	model = build_model(
 		num_classes=len(id_to_name),
 		kernel=cfg.kernel,
@@ -532,7 +547,7 @@ def main() -> int:
 	p.add_argument("--labels-csv", default="downloaded_authors.csv")
 	p.add_argument("--run-dir", default="runs", help="Folder to write run_info.txt")
 	p.add_argument("--run-name", default="", help="Optional tag to include in run folder name")
-	p.add_argument("--epochs", type=int, default=5)
+	p.add_argument("--epochs", type=int, default=10)
 	p.add_argument("--batch-size", type=int, default=2)
 	p.add_argument("--lr", type=float, default=1e-3)
 	p.add_argument("--dropout", type=float, default=0.25)
@@ -540,6 +555,12 @@ def main() -> int:
 	p.add_argument("--target-frames", type=int, default=1024)
 	p.add_argument("--split-ratio", type=float, default=0.7)
 	p.add_argument("--seed", type=int, default=42)
+	p.add_argument(
+		"--device",
+		choices=["auto", "cpu", "cuda"],
+		default="auto",
+		help="Training device. 'auto' uses CUDA if available.",
+	)
 	p.add_argument("--model", choices=["cnn", "cnn_transformer"], default="cnn")
 	p.add_argument("--tx-layers", type=int, default=2)
 	p.add_argument("--tx-heads", type=int, default=4)
@@ -617,6 +638,7 @@ def main() -> int:
 		kernel=args.kernel,
 		target_frames=args.target_frames,
 		split_ratio=args.split_ratio,
+		device=str(args.device),
 		model=args.model,
 		tx_layers=args.tx_layers,
 		tx_heads=args.tx_heads,

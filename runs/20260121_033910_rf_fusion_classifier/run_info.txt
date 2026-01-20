@@ -1,0 +1,37 @@
+== Run ==
+timestamp: 2026-01-21T03:39:14
+script: rf_fusion_classifier
+command: d:\music classification\scripts\rf_fusion_classifier.py --mode train --require-handcrafted --features-dir d:\music classification\features --labels-csv d:\music classification\downloaded_authors.csv --embed-ckpt d:\music classification\models\cnn_transformer_composer.pt --out d:\music classification\models\rf_fusion.joblib
+
+== Environment ==
+cwd: D:\music classification
+env: {'KAGGLE_CONFIG_DIR': None, 'KAGGLE_USERNAME': None}
+package_versions: {'numpy': '2.3.5', 'librosa': '0.11.0', 'torch': '2.9.1+cpu', 'sklearn': '1.8.0', 'kaggle': '1.8.3', 'joblib': '1.5.3'}
+platform: Windows-10-10.0.19045-SP0
+python_executable: D:\music classification\.venv\Scripts\python.exe
+python_version: 3.13.3 (tags/v3.13.3:6280bb5, Apr  8 2025, 14:47:33) [MSC v.1943 64 bit (AMD64)]
+== Hyperparameters / Args ==
+embed_ckpt: d:\music classification\models\cnn_transformer_composer.pt
+features_dir: d:\music classification\features
+labels_csv: d:\music classification\downloaded_authors.csv
+mode: train
+out: d:\music classification\models\rf_fusion.joblib
+predict_npz: None
+predict_wav: None
+require_handcrafted: True
+rf_max_depth: 0
+rf_n_estimators: 200
+run_dir: runs
+run_name: 
+seed: 42
+split_ratio: 0.7
+target_frames: 1024
+topk: 3
+== Extra ==
+embed_ckpt: d:\music classification\models\cnn_transformer_composer.pt
+features_dir: d:\music classification\features
+labels_csv: d:\music classification\downloaded_authors.csv
+mode: train
+num_classes: 18
+num_items: 149
+out: d:\music classification\models\rf_fusion.joblib

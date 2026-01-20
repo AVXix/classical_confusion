@@ -1,0 +1,38 @@
+== Run ==
+timestamp: 2026-01-21T03:04:32
+script: music_classfication
+command: d:\music classification\scripts\music_classfication.py --mode train --model cnn --epochs 10 --device auto --features-dir d:\music classification\features --labels-csv d:\music classification\downloaded_authors.csv
+
+== Environment ==
+cwd: D:\Documents
+env: {'KAGGLE_CONFIG_DIR': None, 'KAGGLE_USERNAME': None}
+package_versions: {'numpy': '2.3.5', 'librosa': '0.11.0', 'torch': '2.9.1+cpu', 'sklearn': '1.8.0', 'kaggle': '1.8.3', 'joblib': '1.5.3'}
+platform: Windows-10-10.0.19045-SP0
+python_executable: D:\music classification\.venv\Scripts\python.exe
+python_version: 3.13.3 (tags/v3.13.3:6280bb5, Apr  8 2025, 14:47:33) [MSC v.1943 64 bit (AMD64)]
+== Hyperparameters / Args ==
+batch_size: 2
+device: auto
+dropout: 0.25
+epochs: 10
+features_dir: d:\music classification\features
+kernel: 3
+labels_csv: d:\music classification\downloaded_authors.csv
+lr: 0.001
+model: cnn
+num_workers: 0
+run_dir: D:\music classification\runs\20260121_030428_music_classfication
+seed: 42
+split_ratio: 0.7
+target_frames: 1024
+tx_dropout: 0.1
+tx_ff_dim: 256
+tx_heads: 4
+tx_layers: 2
+== Extra ==
+features_dir: d:\music classification\features
+labels_csv: d:\music classification\downloaded_authors.csv
+num_classes: 18
+num_items: 149
+train_items: 104
+val_items: 45
