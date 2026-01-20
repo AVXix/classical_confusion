@@ -1,0 +1,16 @@
+== Run ==
+timestamp: 2026-01-21T02:12:33
+script: smoke
+command: python -c ...
+
+== Environment ==
+cwd: d:\music classification
+env: {'KAGGLE_CONFIG_DIR': None, 'KAGGLE_USERNAME': None}
+package_versions: {'numpy': '2.3.5', 'librosa': '0.11.0', 'torch': '2.9.1+cpu', 'sklearn': '1.8.0', 'kaggle': '1.8.3', 'joblib': '1.5.3'}
+platform: Windows-10-10.0.19045-SP0
+python_executable: d:\music classification\.venv\Scripts\python.exe
+python_version: 3.13.3 (tags/v3.13.3:6280bb5, Apr  8 2025, 14:47:33) [MSC v.1943 64 bit (AMD64)]
+== Hyperparameters / Args ==
+a: 1
+== Extra ==
+hello: world

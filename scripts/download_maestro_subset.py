@@ -10,9 +10,15 @@ Requires: kaggle (place your `kaggle.json` as described in README)
 import os
 import argparse
 from pathlib import Path
+import sys
+from typing import Iterable
 
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
+
+# Allow importing from project root when running this file directly.
+if str(PROJECT_ROOT) not in sys.path:
+    sys.path.insert(0, str(PROJECT_ROOT))
 
 
 def resolve_from_root(p: str | Path) -> Path:
@@ -61,6 +67,31 @@ def _print_kaggle_setup_help(expected_path: Path) -> None:
     print('     Then open a new terminal and retry.')
 
 
+def _get_file_size_bytes(f) -> int:
+    # Kaggle SDK objects expose `total_bytes`.
+    size = (
+        getattr(f, 'total_bytes', None)
+        or getattr(f, 'totalBytes', None)
+        or getattr(f, 'size', None)
+        or getattr(f, 'sizeInBytes', None)
+    )
+    try:
+        return int(size) if size is not None else 0
+    except (TypeError, ValueError):
+        return 0
+
+
+def _iter_dataset_files(api, dataset: str, page_size: int = 1000) -> Iterable:
+    page_token = None
+    while True:
+        resp = api.dataset_list_files(dataset, page_token=page_token, page_size=page_size)
+        for f in resp.files:
+            yield f
+        page_token = getattr(resp, 'nextPageToken', None) or getattr(resp, 'next_page_token', None)
+        if not page_token:
+            break
+
+
 def main():
     p = argparse.ArgumentParser()
     p.add_argument('--dataset', default='alonhaviv/the-maestro-dataset-v3-0-0')
@@ -74,11 +105,29 @@ def main():
     p.add_argument('--kaggle-config-dir', default=None,
                    help='Directory containing kaggle.json (sets KAGGLE_CONFIG_DIR)')
     p.add_argument('--dry-run', action='store_true', help='Only select files, do not download')
+    p.add_argument('--show-selected', type=int, default=50,
+                   help='When using --dry-run, print at most this many selected files (0 prints none)')
     p.add_argument('--list-files', action='store_true',
                    help='List files in the dataset and exit (useful to pick --ext)')
     p.add_argument('--enforce-target-bytes', action='store_true',
                    help='When Kaggle file sizes are missing, stop downloading once on-disk outdir size reaches target')
+    p.add_argument('--page-size', type=int, default=1000,
+                   help='Kaggle files API page size (higher reduces API calls; default 1000)')
+    p.add_argument('--no-skip-existing', action='store_true',
+                   help='Do not skip files already present in outdir')
+    p.add_argument('--run-dir', default='runs',
+                   help='Folder to write run_info.txt')
+    p.add_argument('--run-name', default='',
+                   help='Optional tag to include in run folder name')
     args = p.parse_args()
+
+    from scripts.run_logging import create_run_dir, write_run_info_txt
+
+    run_dir = create_run_dir(
+        base_dir=resolve_from_root(args.run_dir),
+        script_name='download_maestro_subset',
+        run_name=str(args.run_name) if args.run_name else None,
+    )
 
     outdir_path = resolve_from_root(args.outdir)
     os.makedirs(outdir_path, exist_ok=True)
@@ -118,17 +167,25 @@ def main():
     api.authenticate()
 
     print(f"Listing files for dataset {args.dataset}...")
-    files_resp = api.dataset_list_files(args.dataset)
-    files = files_resp.files
+    files = list(_iter_dataset_files(api, args.dataset, page_size=args.page_size))
+
+    write_run_info_txt(
+        run_dir=run_dir,
+        script_name='download_maestro_subset',
+        argv=sys.argv,
+        args=args,
+        extra={
+            'dataset_files_listed': len(files),
+            'outdir': str(outdir_path),
+            'current_on_disk_bytes': _dir_size_bytes(outdir_path),
+        },
+    )
 
     if args.list_files:
         for f in files:
             name = getattr(f, 'name', None)
-            size = getattr(f, 'size', None) or getattr(f, 'sizeInBytes', None) or getattr(f, 'totalBytes', None)
-            if size is None:
-                print(f"{name}")
-            else:
-                print(f"{name} — {human(int(size))}")
+            size = _get_file_size_bytes(f)
+            print(f"{name} — {human(size)}")
         return
 
     exts = [e.strip().lower() for e in args.ext.split(',') if e.strip()]
@@ -139,14 +196,7 @@ def main():
         lname = name.lower()
         if not any(lname.endswith(e) for e in exts):
             continue
-        size = (
-            getattr(f, 'size', None)
-            or getattr(f, 'sizeInBytes', None)
-            or getattr(f, 'totalBytes', None)
-            or getattr(f, 'totalBytes', None)
-        )
-        if size is None:
-            size = 0
+        size = _get_file_size_bytes(f)
         candidates.append((name, size))
 
     if not candidates:
@@ -156,22 +206,57 @@ def main():
 
     candidates.sort()
 
+    skip_existing = not args.no_skip_existing
+    existing = set()
+    if skip_existing and outdir_path.exists():
+        for pth in outdir_path.glob('*'):
+            if pth.is_file():
+                existing.add(pth.name)
+
+    current_on_disk = _dir_size_bytes(outdir_path)
+    if current_on_disk >= args.target_bytes:
+        print(
+            f"Outdir already meets target: {human(current_on_disk)} (target {human(args.target_bytes)}). Nothing to do."
+        )
+        return
+
+    remaining_bytes = max(0, args.target_bytes - current_on_disk)
+
     selected = []
     total = 0
     for name, size in candidates:
-        if total >= args.target_bytes:
+        local_name = Path(name).name
+        if skip_existing and local_name in existing:
+            continue
+        if total >= remaining_bytes:
             break
         selected.append((name, size))
         total += size
 
-    if total == 0 and candidates:
-        selected = candidates[: min(5000, len(candidates))]
+    if total == 0 and candidates and (not args.enforce_target_bytes):
+        # If Kaggle reports missing sizes (0), still select a large batch to make progress.
+        # (With enforce-target-bytes, we rely on on-disk size checks per file.)
+        selected = []
+        for name, size in candidates:
+            local_name = Path(name).name
+            if skip_existing and local_name in existing:
+                continue
+            selected.append((name, size))
+            if len(selected) >= 5000:
+                break
 
-    print(f"Selected {len(selected)} files, total {human(total)} (target {human(args.target_bytes)})")
+    print(
+        f"Current on disk: {human(current_on_disk)} | Target total: {human(args.target_bytes)} | Remaining: {human(remaining_bytes)}"
+    )
+    print(f"Selected {len(selected)} files, planned download {human(total)}")
 
     if args.dry_run:
-        for name, size in selected:
+        limit = max(0, int(args.show_selected))
+        to_show = [] if limit == 0 else selected[:limit]
+        for name, size in to_show:
             print(f"{name} — {human(size)}")
+        if limit != 0 and len(selected) > limit:
+            print(f"... and {len(selected) - limit} more")
         return
 
     for name, size in selected:

@@ -39,6 +39,8 @@ PROJECT_ROOT = Path(__file__).resolve().parents[1]
 if str(PROJECT_ROOT) not in sys.path:
     sys.path.insert(0, str(PROJECT_ROOT))
 
+from scripts.run_logging import create_run_dir, write_run_info_txt
+
 
 def resolve_from_root(p: str | Path) -> Path:
     path = Path(p)
@@ -362,6 +364,9 @@ def main() -> int:
     p.add_argument("--rf-n-estimators", type=int, default=200)
     p.add_argument("--rf-max-depth", type=int, default=0, help="0 = None")
 
+    p.add_argument("--run-dir", default="runs", help="Folder to write run_info.txt")
+    p.add_argument("--run-name", default="", help="Optional tag to include in run folder name")
+
     p.add_argument("--out", default="models/rf_fusion.joblib")
 
     p.add_argument("--predict-wav", default=None)
@@ -370,12 +375,43 @@ def main() -> int:
 
     args = p.parse_args()
 
+    run_dir = create_run_dir(
+        base_dir=resolve_from_root(args.run_dir),
+        script_name="rf_fusion_classifier",
+        run_name=str(args.run_name) if args.run_name else None,
+    )
+
     features_dir = resolve_from_root(args.features_dir)
     labels_csv = resolve_from_root(args.labels_csv)
     ckpt_path = resolve_from_root(args.embed_ckpt)
     out_path = resolve_from_root(args.out)
 
+    # Best-effort dataset stats for logging.
+    try:
+        labels = _read_labels(labels_csv)
+        items = _build_dataset_index(features_dir, labels)
+        num_items = len(items)
+        num_classes = len({c for _, c in items})
+    except Exception:
+        num_items = None
+        num_classes = None
+
     if args.mode == "train":
+        write_run_info_txt(
+            run_dir=run_dir,
+            script_name="rf_fusion_classifier",
+            argv=sys.argv,
+            args=args,
+            extra={
+                "mode": "train",
+                "features_dir": str(features_dir),
+                "labels_csv": str(labels_csv),
+                "embed_ckpt": str(ckpt_path),
+                "out": str(out_path),
+                "num_items": num_items,
+                "num_classes": num_classes,
+            },
+        )
         return train_rf(
             features_dir=features_dir,
             labels_csv=labels_csv,
@@ -391,6 +427,20 @@ def main() -> int:
 
     predict_wav = resolve_from_root(args.predict_wav) if args.predict_wav else None
     predict_npz = resolve_from_root(args.predict_npz) if args.predict_npz else None
+
+    write_run_info_txt(
+        run_dir=run_dir,
+        script_name="rf_fusion_classifier",
+        argv=sys.argv,
+        args=args,
+        extra={
+            "mode": "predict",
+            "model": str(out_path),
+            "embed_ckpt": str(ckpt_path),
+            "predict_wav": str(predict_wav) if predict_wav else None,
+            "predict_npz": str(predict_npz) if predict_npz else None,
+        },
+    )
 
     return predict_rf(
         model_path=out_path,

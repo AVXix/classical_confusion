@@ -21,12 +21,17 @@ from __future__ import annotations
 import argparse
 import csv
 from pathlib import Path
+import sys
 
 import numpy as np
 import librosa
 
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
+
+# Allow importing from project root when running this file directly.
+if str(PROJECT_ROOT) not in sys.path:
+    sys.path.insert(0, str(PROJECT_ROOT))
 
 
 def resolve_from_root(p: str | Path) -> Path:
@@ -176,6 +181,11 @@ def main() -> int:
     p = argparse.ArgumentParser()
     p.add_argument("--in-dir", default="data", help="Folder with .wav files")
     p.add_argument("--out-dir", default="features", help="Folder for .npz outputs")
+    p.add_argument(
+        "--only-labeled-csv",
+        default="",
+        help="If set, only extract WAVs whose basename appears in this labels CSV (expects column downloaded_file)",
+    )
     p.add_argument("--sr", type=int, default=22050)
     p.add_argument("--n-fft", type=int, default=2048)
     p.add_argument("--hop-length", type=int, default=512)
@@ -191,8 +201,23 @@ def main() -> int:
         action="store_true",
         help="Compute handcrafted features: tempo/beat, ZCR, spectral, chroma, tonnetz (X_hand)",
     )
+    p.add_argument("--run-dir", default="runs", help="Folder to write run_info.txt")
+    p.add_argument("--run-name", default="", help="Optional tag to include in run folder name")
+    p.add_argument(
+        "--skip-existing",
+        action="store_true",
+        help="Skip extraction when output .npz already exists (still writes index rows)",
+    )
     p.add_argument("--max-files", type=int, default=0, help="0 = no limit")
     args = p.parse_args()
+
+    from scripts.run_logging import create_run_dir, write_run_info_txt
+
+    run_dir = create_run_dir(
+        base_dir=resolve_from_root(args.run_dir),
+        script_name="extract_features",
+        run_name=str(args.run_name) if args.run_name else None,
+    )
 
     in_dir = resolve_from_root(args.in_dir)
     out_dir = resolve_from_root(args.out_dir)
@@ -202,11 +227,38 @@ def main() -> int:
     out_dir.mkdir(parents=True, exist_ok=True)
 
     wav_files = sorted([p for p in in_dir.rglob("*.wav") if p.is_file()])
+
+    # Optionally restrict to WAVs that appear in a labels CSV (downloaded_authors.csv).
+    if args.only_labeled_csv:
+        labels_path = resolve_from_root(args.only_labeled_csv)
+        if not labels_path.exists():
+            print(f"Labels CSV not found: {labels_path}")
+            return 2
+        with labels_path.open("r", encoding="utf-8", newline="") as f:
+            r = csv.DictReader(f)
+            if not r.fieldnames or "downloaded_file" not in r.fieldnames:
+                print("Labels CSV must contain column: downloaded_file")
+                return 2
+            allowed = {(row.get("downloaded_file") or "").strip() for row in r}
+        allowed = {a for a in allowed if a}
+        wav_files = [w for w in wav_files if w.name in allowed]
     if args.max_files and args.max_files > 0:
         wav_files = wav_files[: args.max_files]
     if not wav_files:
         print(f"No .wav files found under: {in_dir}")
         return 2
+
+    write_run_info_txt(
+        run_dir=run_dir,
+        script_name="extract_features",
+        argv=sys.argv,
+        args=args,
+        extra={
+            "in_dir": str(in_dir),
+            "out_dir": str(out_dir),
+            "wav_files": len(wav_files),
+        },
+    )
 
     win_length = args.n_fft if args.win_length in (0, None) else args.win_length
     fmax = None if args.fmax <= 0 else float(args.fmax)
@@ -215,6 +267,36 @@ def main() -> int:
     index_rows = []
 
     for i, wav_path in enumerate(wav_files, start=1):
+        out_path = out_dir / (wav_path.stem + ".npz")
+
+        if args.skip_existing and out_path.exists():
+            # Load minimal info for the index (avoid recomputing features).
+            with np.load(out_path) as d:
+                if "X_spec" not in d:
+                    # Corrupt/incomplete file: re-extract.
+                    do_skip = False
+                else:
+                    X_spec = d["X_spec"]
+                    has_mfcc = int("X_mfcc" in d)
+                    has_handcrafted = int("X_hand" in d)
+                    hand_dim = int(d["X_hand"].shape[0]) if "X_hand" in d else 0
+                    do_skip = True
+
+            if do_skip:
+                index_rows.append(
+                    {
+                        "wav_file": wav_path.name,
+                        "out_npz": out_path.name,
+                        "spec_freq_bins": int(X_spec.shape[0]),
+                        "spec_time_frames": int(X_spec.shape[1]),
+                        "has_mfcc": int(has_mfcc),
+                        "has_handcrafted": int(has_handcrafted),
+                        "hand_dim": int(hand_dim),
+                    }
+                )
+                print(f"[{i}/{len(wav_files)}] skip {out_path.name}")
+                continue
+
         feats = extract_one(
             wav_path,
             sr=args.sr,
@@ -230,7 +312,6 @@ def main() -> int:
             do_handcrafted=bool(args.handcrafted),
         )
 
-        out_path = out_dir / (wav_path.stem + ".npz")
         np.savez_compressed(out_path, **feats)
 
         X_spec = feats["X_spec"]
@@ -248,10 +329,11 @@ def main() -> int:
 
         print(f"[{i}/{len(wav_files)}] wrote {out_path.name} | X_spec={X_spec.shape}")
 
-    with index_csv.open("w", encoding="utf-8", newline="") as f:
-        w = csv.DictWriter(f, fieldnames=list(index_rows[0].keys()))
-        w.writeheader()
-        w.writerows(index_rows)
+    if index_rows:
+        with index_csv.open("w", encoding="utf-8", newline="") as f:
+            w = csv.DictWriter(f, fieldnames=list(index_rows[0].keys()))
+            w.writeheader()
+            w.writerows(index_rows)
 
     print(f"Wrote index: {index_csv}")
     return 0

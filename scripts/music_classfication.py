@@ -19,11 +19,16 @@ import argparse
 import csv
 from dataclasses import dataclass
 from pathlib import Path
+import sys
 from typing import Dict, List, Tuple
 
 import numpy as np
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
+
+# Allow importing from project root when running this file directly.
+if str(PROJECT_ROOT) not in sys.path:
+	sys.path.insert(0, str(PROJECT_ROOT))
 
 
 def resolve_from_root(p: str | Path) -> Path:
@@ -35,6 +40,7 @@ def resolve_from_root(p: str | Path) -> Path:
 class TrainConfig:
 	features_dir: Path
 	labels_csv: Path
+	run_dir: Path | None = None
 	batch_size: int = 2
 	epochs: int = 5
 	lr: float = 1e-3
@@ -99,7 +105,12 @@ def _build_dataset_index(features_dir: Path, labels: Dict[str, str]) -> List[Tup
 		if stem in labels:
 			items.append((npz_path, labels[stem]))
 	if not items:
-		raise ValueError(f"No matching feature files in {features_dir}.")
+		raise ValueError(
+			f"No matching feature files in {features_dir}. "
+			f"You likely downloaded more WAVs and updated downloaded_authors.csv; now extract features for them. "
+			f"Run: python scripts/extract_features.py --in-dir data --out-dir {features_dir.name} "
+			f"--only-labeled-csv downloaded_authors.csv --skip-existing"
+		)
 	return items
 
 
@@ -270,6 +281,7 @@ def train(cfg: TrainConfig) -> int:
 	import torch
 	import torch.nn.functional as F
 	from torch.utils.data import DataLoader, Dataset
+	from scripts.run_logging import write_run_info_txt
 
 	rng = np.random.default_rng(cfg.seed)
 	labels = _read_labels(cfg.labels_csv)
@@ -278,6 +290,22 @@ def train(cfg: TrainConfig) -> int:
 
 	target_frames = int(cfg.target_frames)
 	train_idx, val_idx = _split_indices(len(items), split_ratio=cfg.split_ratio, seed=cfg.seed)
+
+	if cfg.run_dir is not None:
+		write_run_info_txt(
+			run_dir=cfg.run_dir,
+			script_name="music_classfication",
+			argv=sys.argv,
+			args=cfg,
+			extra={
+				"num_items": len(items),
+				"num_classes": len(id_to_name),
+				"train_items": int(len(train_idx)),
+				"val_items": int(len(val_idx)),
+				"features_dir": str(cfg.features_dir),
+				"labels_csv": str(cfg.labels_csv),
+			},
+		)
 
 	class NpzDataset(Dataset):
 		def __init__(self, idxs: np.ndarray):
@@ -502,6 +530,8 @@ def main() -> int:
 	p.add_argument("--mode", choices=["train", "predict", "eval"], default="train")
 	p.add_argument("--features-dir", default="features")
 	p.add_argument("--labels-csv", default="downloaded_authors.csv")
+	p.add_argument("--run-dir", default="runs", help="Folder to write run_info.txt")
+	p.add_argument("--run-name", default="", help="Optional tag to include in run folder name")
 	p.add_argument("--epochs", type=int, default=5)
 	p.add_argument("--batch-size", type=int, default=2)
 	p.add_argument("--lr", type=float, default=1e-3)
@@ -509,6 +539,7 @@ def main() -> int:
 	p.add_argument("--kernel", type=int, default=3, choices=[3, 5])
 	p.add_argument("--target-frames", type=int, default=1024)
 	p.add_argument("--split-ratio", type=float, default=0.7)
+	p.add_argument("--seed", type=int, default=42)
 	p.add_argument("--model", choices=["cnn", "cnn_transformer"], default="cnn")
 	p.add_argument("--tx-layers", type=int, default=2)
 	p.add_argument("--tx-heads", type=int, default=4)
@@ -521,6 +552,14 @@ def main() -> int:
 	p.add_argument("--topk", type=int, default=3)
 	args = p.parse_args()
 
+	from scripts.run_logging import create_run_dir, write_run_info_txt
+	base_run_dir = resolve_from_root(args.run_dir)
+	run_dir = create_run_dir(
+		base_dir=base_run_dir,
+		script_name="music_classfication",
+		run_name=str(args.run_name) if args.run_name else None,
+	)
+
 	# If user keeps the default ckpt path but chooses transformer, switch to transformer ckpt.
 	ckpt_arg = args.ckpt
 	if ckpt_arg == "models/cnn_composer.pt" and args.model == "cnn_transformer":
@@ -530,15 +569,39 @@ def main() -> int:
 	if args.mode == "predict":
 		wav_path = resolve_from_root(args.predict_wav) if args.predict_wav else None
 		npz_path = resolve_from_root(args.predict_npz) if args.predict_npz else None
+		write_run_info_txt(
+			run_dir=run_dir,
+			script_name="music_classfication",
+			argv=sys.argv,
+			args=args,
+			extra={
+				"mode": "predict",
+				"ckpt": str(ckpt_path),
+				"predict_wav": str(wav_path) if wav_path else None,
+				"predict_npz": str(npz_path) if npz_path else None,
+			},
+		)
 		return predict(ckpt_path=ckpt_path, wav_path=wav_path, npz_path=npz_path, topk=args.topk)
 
 	if args.mode == "eval":
+		write_run_info_txt(
+			run_dir=run_dir,
+			script_name="music_classfication",
+			argv=sys.argv,
+			args=args,
+			extra={
+				"mode": "eval",
+				"ckpt": str(ckpt_path),
+				"features_dir": str(resolve_from_root(args.features_dir)),
+				"labels_csv": str(resolve_from_root(args.labels_csv)),
+			},
+		)
 		return evaluate(
 			ckpt_path=ckpt_path,
 			features_dir=resolve_from_root(args.features_dir),
 			labels_csv=resolve_from_root(args.labels_csv),
 			split_ratio=float(args.split_ratio),
-			seed=42,
+			seed=int(args.seed),
 			batch_size=int(args.batch_size),
 			debug_shapes=bool(args.debug_shapes),
 		)
@@ -546,6 +609,7 @@ def main() -> int:
 	cfg = TrainConfig(
 		features_dir=resolve_from_root(args.features_dir),
 		labels_csv=resolve_from_root(args.labels_csv),
+		run_dir=run_dir,
 		epochs=args.epochs,
 		batch_size=args.batch_size,
 		lr=args.lr,
@@ -558,6 +622,7 @@ def main() -> int:
 		tx_heads=args.tx_heads,
 		tx_ff_dim=args.tx_ff_dim,
 		tx_dropout=args.tx_dropout,
+		seed=int(args.seed),
 	)
 	return train(cfg)
 
