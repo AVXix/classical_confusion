@@ -50,6 +50,7 @@ def log_amplitude(x: np.ndarray, mode: str) -> np.ndarray:
 def extract_one(
     wav_path: Path,
     *,
+    midi_path: Path | None = None,
     sr: int,
     n_fft: int,
     hop_length: int,
@@ -61,6 +62,7 @@ def extract_one(
     do_mfcc: bool,
     n_mfcc: int,
     do_handcrafted: bool,
+    do_midi: bool,
 ) -> dict:
     y, sr_actual = librosa.load(wav_path, sr=sr, mono=True)
     D = librosa.stft(y, n_fft=n_fft, hop_length=hop_length, win_length=win_length)
@@ -88,7 +90,28 @@ def extract_one(
     if do_handcrafted:
         out["X_hand"] = compute_handcrafted_features(y=y, sr=sr_actual).astype(np.float32)
 
+    if do_midi and midi_path is not None and midi_path.exists():
+        from scripts.midi_features import extract_midi_feature_vector
+
+        out["X_midi"] = extract_midi_feature_vector(midi_path).astype(np.float32)
+
     return out
+
+
+def _find_matching_midi(wav_path: Path) -> Path | None:
+    """Best-effort lookup for a MIDI file matching a WAV file."""
+    cand = wav_path.with_suffix(".midi")
+    if cand.exists():
+        return cand
+    cand2 = wav_path.with_suffix(".mid")
+    if cand2.exists():
+        return cand2
+    # Some datasets can have different extension casing.
+    for ext in (".MIDI", ".MID"):
+        c = wav_path.with_suffix(ext)
+        if c.exists():
+            return c
+    return None
 
 
 def _safe_mean_std(x: np.ndarray) -> tuple[float, float]:
@@ -201,6 +224,11 @@ def main() -> int:
         action="store_true",
         help="Compute handcrafted features: tempo/beat, ZCR, spectral, chroma, tonnetz (X_hand)",
     )
+    p.add_argument(
+        "--midi",
+        action="store_true",
+        help="Also compute MIDI feature vector (X_midi) from a matching .midi/.mid file",
+    )
     p.add_argument("--run-dir", default="runs", help="Folder to write run_info.txt")
     p.add_argument("--run-name", default="", help="Optional tag to include in run folder name")
     p.add_argument(
@@ -268,6 +296,7 @@ def main() -> int:
 
     for i, wav_path in enumerate(wav_files, start=1):
         out_path = out_dir / (wav_path.stem + ".npz")
+        midi_path = _find_matching_midi(wav_path) if args.midi else None
 
         if args.skip_existing and out_path.exists():
             # Load minimal info for the index (avoid recomputing features).
@@ -280,7 +309,19 @@ def main() -> int:
                     has_mfcc = int("X_mfcc" in d)
                     has_handcrafted = int("X_hand" in d)
                     hand_dim = int(d["X_hand"].shape[0]) if "X_hand" in d else 0
-                    do_skip = True
+                    has_midi = int("X_midi" in d)
+                    midi_dim = int(d["X_midi"].shape[0]) if "X_midi" in d else 0
+
+                    # If the user requested additional features, don't skip when they're missing.
+                    missing_requested = False
+                    if bool(args.mfcc) and not bool(has_mfcc):
+                        missing_requested = True
+                    if bool(args.handcrafted) and not bool(has_handcrafted):
+                        missing_requested = True
+                    if bool(args.midi) and not bool(has_midi):
+                        missing_requested = True
+
+                    do_skip = not missing_requested
 
             if do_skip:
                 index_rows.append(
@@ -292,6 +333,8 @@ def main() -> int:
                         "has_mfcc": int(has_mfcc),
                         "has_handcrafted": int(has_handcrafted),
                         "hand_dim": int(hand_dim),
+                        "has_midi": int(has_midi),
+                        "midi_dim": int(midi_dim),
                     }
                 )
                 print(f"[{i}/{len(wav_files)}] skip {out_path.name}")
@@ -299,6 +342,7 @@ def main() -> int:
 
         feats = extract_one(
             wav_path,
+            midi_path=midi_path,
             sr=args.sr,
             n_fft=args.n_fft,
             hop_length=args.hop_length,
@@ -310,6 +354,7 @@ def main() -> int:
             do_mfcc=bool(args.mfcc),
             n_mfcc=int(args.n_mfcc),
             do_handcrafted=bool(args.handcrafted),
+            do_midi=bool(args.midi),
         )
 
         np.savez_compressed(out_path, **feats)
@@ -324,6 +369,8 @@ def main() -> int:
                 "has_mfcc": int("X_mfcc" in feats),
                 "has_handcrafted": int("X_hand" in feats),
                 "hand_dim": int(feats["X_hand"].shape[0]) if "X_hand" in feats else 0,
+                "has_midi": int("X_midi" in feats),
+                "midi_dim": int(feats["X_midi"].shape[0]) if "X_midi" in feats else 0,
             }
         )
 

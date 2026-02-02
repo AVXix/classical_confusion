@@ -1,0 +1,43 @@
+== Run ==
+timestamp: 2026-02-02T18:37:50
+script: music_classfication
+command: scripts/music_classfication.py --mode predict --ckpt models/cnn_composer.pt --predict-wav data/2004/MIDI-Unprocessed_SMF_02_R1_2004_01-05_ORIG_MID--AUDIO_02_R1_2004_05_Track05_wav.wav --topk 5
+
+== Environment ==
+cwd: E:\data\archive\music classification
+env: {'KAGGLE_CONFIG_DIR': None, 'KAGGLE_USERNAME': None}
+package_versions: {'numpy': '2.3.5', 'librosa': '0.11.0', 'torch': '2.9.1+cpu', 'sklearn': '1.8.0', 'kaggle': '1.8.3', 'joblib': '1.5.3'}
+platform: Windows-10-10.0.19045-SP0
+python_executable: E:\data\archive\music classification\.venv\Scripts\python.exe
+python_version: 3.13.3 (tags/v3.13.3:6280bb5, Apr  8 2025, 14:47:33) [MSC v.1943 64 bit (AMD64)]
+== Hyperparameters / Args ==
+batch_size: 2
+ckpt: models/cnn_composer.pt
+debug_shapes: False
+device: auto
+dropout: 0.25
+epochs: 10
+features_dir: features
+kernel: 3
+label_column: canonical_composer
+labels_csv: downloaded_authors.csv
+lr: 0.001
+mode: predict
+model: cnn
+predict_npz: None
+predict_wav: data/2004/MIDI-Unprocessed_SMF_02_R1_2004_01-05_ORIG_MID--AUDIO_02_R1_2004_05_Track05_wav.wav
+run_dir: runs
+run_name: 
+seed: 42
+split_ratio: 0.7
+target_frames: 1024
+topk: 5
+tx_dropout: 0.1
+tx_ff_dim: 256
+tx_heads: 4
+tx_layers: 2
+== Extra ==
+ckpt: E:\data\archive\music classification\models\cnn_composer.pt
+mode: predict
+predict_npz: None
+predict_wav: E:\data\archive\music classification\data\2004\MIDI-Unprocessed_SMF_02_R1_2004_01-05_ORIG_MID--AUDIO_02_R1_2004_05_Track05_wav.wav

@@ -64,8 +64,9 @@ def normalize_composer(name: str) -> str:
 def composer_era_for(composer: str) -> str:
     composer = (composer or "").strip()
     if not composer:
-        return "Unknown"
-    return COMPOSER_ERA.get(composer, "Unknown")
+        return ""
+    # Per request: leave blank if we don't have an era mapping for this composer.
+    return COMPOSER_ERA.get(composer, "")
 
 
 def main() -> int:
@@ -108,7 +109,7 @@ def main() -> int:
             print("Metadata CSV has no headers")
             return 2
 
-        required = ["canonical_composer", "canonical_title", "year", "audio_filename"]
+        required = ["canonical_composer", "canonical_title", "year", "audio_filename", "midi_filename"]
         for r in required:
             if r not in reader.fieldnames:
                 print(f"Missing column {r} in metadata CSV")
@@ -133,6 +134,19 @@ def main() -> int:
         row = by_audio_basename.get(base)
         if not row:
             missing.append(base)
+            out_rows.append(
+                {
+                    "downloaded_file": base,
+                    "canonical_composer": "",
+                    "composer_era": "",
+                    "canonical_title": "",
+                    "year": "",
+                    "split": "",
+                    "duration": "",
+                    "audio_filename": "",
+                    "midi_filename": "",
+                }
+            )
             continue
         composer = normalize_composer(row.get("canonical_composer", ""))
         out_rows.append(
@@ -145,6 +159,7 @@ def main() -> int:
                 "split": row.get("split", ""),
                 "duration": row.get("duration", ""),
                 "audio_filename": row.get("audio_filename", ""),
+                "midi_filename": row.get("midi_filename", ""),
             }
         )
 
@@ -161,6 +176,7 @@ def main() -> int:
                     "split",
                     "duration",
                     "audio_filename",
+                    "midi_filename",
                 ],
             )
             w.writeheader()

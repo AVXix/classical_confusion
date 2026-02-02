@@ -92,17 +92,20 @@ def _pad_or_crop_time(x: np.ndarray, target_frames: int) -> np.ndarray:
     return np.pad(x, ((0, 0), (0, pad)), mode="constant")
 
 
-def _load_npz(npz_path: Path) -> tuple[np.ndarray, np.ndarray | None]:
+def _load_npz(npz_path: Path) -> tuple[np.ndarray, np.ndarray | None, np.ndarray | None]:
     with np.load(npz_path) as d:
         if "X_spec" not in d:
             raise ValueError(f"Missing X_spec in {npz_path}")
         x_spec = d["X_spec"].astype(np.float32)
         x_hand = d["X_hand"].astype(np.float32) if "X_hand" in d else None
+        x_midi = d["X_midi"].astype(np.float32) if "X_midi" in d else None
     if x_spec.ndim != 2:
         raise ValueError(f"X_spec must be 2D [n_mels x frames], got {x_spec.shape}")
     if x_hand is not None and x_hand.ndim != 1:
         raise ValueError(f"X_hand must be 1D, got {x_hand.shape}")
-    return x_spec, x_hand
+    if x_midi is not None and x_midi.ndim != 1:
+        raise ValueError(f"X_midi must be 1D, got {x_midi.shape}")
+    return x_spec, x_hand, x_midi
 
 
 def _extract_xspec_from_wav(wav_path: Path) -> np.ndarray:
@@ -258,6 +261,8 @@ def train_pipeline(
     split_ratio: float,
     seed: int,
     require_handcrafted: bool,
+    use_midi: bool,
+    require_midi: bool,
     latent_dim: int,
     beta: float,
     vae_epochs: int,
@@ -277,15 +282,24 @@ def train_pipeline(
     cnn_list: list[np.ndarray] = []
     tx_list: list[np.ndarray] = []
     hand_list: list[np.ndarray] = []
+    midi_list: list[np.ndarray] = []
     y_list: list[int] = []
 
     for npz_path, label in items:
-        x_spec, x_hand = _load_npz(npz_path)
+        x_spec, x_hand, x_midi = _load_npz(npz_path)
         cnn_p, tx_p = extractor.embed(x_spec)
         if x_hand is None:
             if require_handcrafted:
                 raise ValueError("X_hand is missing. Re-run feature extraction with --handcrafted.")
             x_hand = np.zeros((47,), dtype=np.float32)
+
+        if use_midi:
+            if x_midi is None:
+                if require_midi:
+                    raise ValueError("X_midi is missing. Re-run feature extraction with --midi.")
+                x_midi = np.zeros((126,), dtype=np.float32)
+            midi_list.append(x_midi.astype(np.float32))
+
         cnn_list.append(cnn_p)
         tx_list.append(tx_p)
         hand_list.append(x_hand.astype(np.float32))
@@ -294,6 +308,7 @@ def train_pipeline(
     cnn = np.stack(cnn_list, axis=0)
     tx = np.stack(tx_list, axis=0)
     hand = np.stack(hand_list, axis=0)
+    midi = np.stack(midi_list, axis=0) if use_midi else np.zeros((len(items), 0), dtype=np.float32)
     y = np.asarray(y_list, dtype=np.int64)
 
     train_idx, val_idx = _split_indices(len(items), split_ratio=split_ratio, seed=seed)
@@ -333,7 +348,7 @@ def train_pipeline(
             mu_all.append(mu.cpu().numpy())
         z = np.concatenate(mu_all, axis=0)
 
-    fused = np.concatenate([cnn, tx, z, hand], axis=1).astype(np.float32)
+    fused = np.concatenate([cnn, tx, z, hand, midi], axis=1).astype(np.float32)
     fused_mean = fused[train_idx].mean(axis=0)
     fused_std = fused[train_idx].std(axis=0)
     fused_norm = _standardize(fused, fused_mean, fused_std)
@@ -394,6 +409,9 @@ def train_pipeline(
             "ckpt_path": str(ckpt_path),
             "target_frames": int(target_frames),
             "require_handcrafted": bool(require_handcrafted),
+            "use_midi": bool(use_midi),
+            "require_midi": bool(require_midi),
+            "midi_dim": int(midi.shape[1]) if bool(use_midi) else 0,
         },
         out_path,
     )
@@ -410,6 +428,8 @@ def train_pipeline(
                 "labels_csv": str(labels_csv),
                 "label_column": label_column,
                 "embed_ckpt": str(ckpt_path),
+                "use_midi": bool(use_midi),
+                "require_midi": bool(require_midi),
                 "latent_dim": int(latent_dim),
                 "beta": float(beta),
                 "vae_epochs": int(vae_epochs),
@@ -441,17 +461,21 @@ def predict(
     id_to_name: list[str] = bundle["id_to_name"]
     latent_dim = int(bundle["latent_dim"])
     require_handcrafted = bool(bundle.get("require_handcrafted", False))
+    use_midi = bool(bundle.get("use_midi", False))
+    require_midi = bool(bundle.get("require_midi", False))
+    midi_dim = int(bundle.get("midi_dim", 0))
 
     extractor = TorchFeatureExtractor(
         FeatureExtractorConfig(ckpt_path=ckpt_path, target_frames=target_frames, device=device)
     )
 
     if npz_path is not None:
-        x_spec, x_hand = _load_npz(npz_path)
+        x_spec, x_hand, x_midi = _load_npz(npz_path)
         source = npz_path.name
     else:
         x_spec = _extract_xspec_from_wav(wav_path)
         x_hand = None
+        x_midi = None
         source = wav_path.name
 
     cnn_p, tx_p = extractor.embed(x_spec)
@@ -459,6 +483,12 @@ def predict(
         if require_handcrafted:
             raise ValueError("X_hand is missing. Re-run feature extraction with --handcrafted.")
         x_hand = np.zeros((47,), dtype=np.float32)
+
+    if use_midi:
+        if x_midi is None:
+            if require_midi:
+                raise ValueError("X_midi is missing. Re-run feature extraction with --midi.")
+            x_midi = np.zeros((midi_dim if midi_dim > 0 else 126,), dtype=np.float32)
 
     cnn_mean = bundle["cnn_mean"]
     cnn_std = bundle["cnn_std"]
@@ -475,7 +505,10 @@ def predict(
         mu, _ = vae.encode(torch.from_numpy(cnn_norm).to(device))
         z = mu.cpu().numpy()
 
-    fused = np.concatenate([cnn_p[None, :], tx_p[None, :], z, x_hand[None, :]], axis=1)
+    if use_midi:
+        fused = np.concatenate([cnn_p[None, :], tx_p[None, :], z, x_hand[None, :], x_midi[None, :]], axis=1)
+    else:
+        fused = np.concatenate([cnn_p[None, :], tx_p[None, :], z, x_hand[None, :]], axis=1)
     fused_norm = _standardize(fused, fused_mean, fused_std)
 
     clf = FusionClassifier(input_dim=fused_norm.shape[1], num_classes=len(id_to_name)).to(device)
@@ -508,6 +541,8 @@ def main() -> int:
     p.add_argument("--embed-ckpt", default="models/cnn_transformer_composer.pt")
     p.add_argument("--target-frames", type=int, default=1024)
     p.add_argument("--require-handcrafted", action="store_true")
+    p.add_argument("--use-midi", action="store_true", help="Include X_midi in the fused feature vector")
+    p.add_argument("--require-midi", action="store_true", help="Fail if X_midi is missing in any .npz")
 
     p.add_argument("--latent-dim", type=int, default=32)
     p.add_argument("--beta", type=float, default=1.0)
@@ -555,6 +590,8 @@ def main() -> int:
         split_ratio=float(args.split_ratio),
         seed=int(args.seed),
         require_handcrafted=bool(args.require_handcrafted),
+        use_midi=bool(args.use_midi),
+        require_midi=bool(args.require_midi),
         latent_dim=int(args.latent_dim),
         beta=float(args.beta),
         vae_epochs=int(args.vae_epochs),
